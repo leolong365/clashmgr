@@ -180,9 +180,29 @@ header:
 
 ---
 
+### 25. `-destination 'platform=iOS Simulator,name=iPhone 15'` 会随 runner 镜像升级失效
+- 现象：GitHub Actions 的 `macos-14` 镜像升级后，预装的模拟器型号会变（可能只剩 iPhone 16 系列），
+  写死 `name=iPhone 15` 会报 `Unable to find a device matching the provided destination specifier`。
+- 解决：先现场挑 UDID，再传给 `-destination`：
+  ```bash
+  UDID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2}' | head -n 1)
+  echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+  xcodebuild build ... -destination "id=$SIM_UDID"
+  ```
+  注意用 `awk -F '[()]'` 取括号里那段；`python3 -c` 嵌多行脚本会破坏 YAML 的块标量缩进，别用。
+
+### 26. 在 `edit` 工具里写 YAML 续行符要小心
+- 现象：`old_string was not found`，明明肉眼一样。
+- 根因：`old_string` 里把续行符写成了双反斜杠 `\\`，而磁盘上是单反斜杠 `\`。
+- 教训：**改 YAML / shell 续行时，用 Python 读磁盘原文再 `assert old in s` 匹配**，
+  避免手打反斜杠数量出错；批量重写更安全的是整文件 `write`。
+
+---
+
 ## 五、待办 / 未验证
 
 - **SwiftUI 视图层从未在真实 Xcode 下编译过**，只有 Godbolt `-parse` 语法检查。
   首次 CI 运行可能需要修 1–3 轮（`.onChange` 签名、`Form` 里的 `Picker` 泛型、`toolbar` 内容推断等常见点）。
-- `E:\clash\clashmgr` 目前**不是 git 仓库**，本机无 `gh` CLI、无 `GITHUB_TOKEN`、无 SSH key、
-  `git config user.name/email` 均为空 → 推 GitHub 需要用户提供凭据或在网页端建仓库。
+- 本地 git 仓库已建立（`git init` + 本地 `user.name/email`），已提交 2 个 commit；
+  但本机**无 `gh` CLI、无 `GITHUB_TOKEN`、无 SSH key** → 推 GitHub 仍需用户提供仓库地址 + PAT，
+  或由用户在网页端上传 `E:\clash\clashmgr` 目录。

@@ -156,7 +156,9 @@ PYTHONIOENCODING=utf-8 python verify_yaml.py   # 26 用例 + 39 顶层键深比�
 
 1. **build-and-test**（`macos-14`）
    `brew install xcodegen` → `xcodegen generate` → `xcodebuild build` + `xcodebuild test`
-   （模拟器 `iPhone 15`，`CODE_SIGNING_ALLOWED=NO`）
+   （模拟器用 `xcrun simctl list devices available` 现场挑第一个可用的 iPhone，取其 UDID 传
+   `-destination "id=$SIM_UDID"`，避免 runner 镜像升级后 `name=iPhone 15` 找不到设备；
+   编译参数带 `CODE_SIGNING_ALLOWED=NO`）
 2. **package-unsigned-ipa**（依赖 1，仅 main / 手动触发）
    `xcodebuild archive` → `Payload/` → `zip` 成 **未签名 ipa** 作为 artifact
 
