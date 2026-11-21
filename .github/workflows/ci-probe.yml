@@ -1,0 +1,17 @@
+name: Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello
+        run: echo "ubuntu runner OK on ${{ runner.os }}"
+
+  hello-mac:
+    runs-on: macos-14
+    steps:
+      - name: Hello mac
+        run: echo "macos-14 runner OK, xcode $(xcodebuild -version | head -1)"
