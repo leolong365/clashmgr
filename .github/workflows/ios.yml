@@ -21,27 +21,33 @@ jobs:
     name: Build & Test
     runs-on: macos-14
     timeout-minutes: 30
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
+      - name: Show toolchain versions
         run: |
           xcodebuild -version
           xcrun --sdk iphonesimulator --show-sdk-version
 
       - name: Install XcodeGen
-        run: |
-          brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen
-          xcodegen --version
+        run: brew install xcodegen || brew upgrade xcodegen
 
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
 
-      - name: Show available simulators
-        run: xcrun simctl list devices available | head -40
+      # 用 UDID 指定模拟器：runner 镜像升级后 "name=iPhone 15" 可能已不存在。
+      - name: Pick an available simulator
+        run: |
+          UDID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2}' | head -n 1)
+          if [ -z "$UDID" ]; then
+            echo "::error::没有可用的 iOS 模拟器"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "使用模拟器 UDID: $UDID"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
 
       - name: Build
         working-directory: ios
@@ -51,7 +57,7 @@ jobs:
             -project ClashMgr.xcodeproj \
             -scheme ClashMgr \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            -destination "id=$SIM_UDID" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             | tee build.log
@@ -64,7 +70,7 @@ jobs:
             -project ClashMgr.xcodeproj \
             -scheme ClashMgr \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            -destination "id=$SIM_UDID" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             -resultBundlePath TestResults.xcresult \
@@ -76,10 +82,10 @@ jobs:
         with:
           name: test-results
           path: ios/TestResults.xcresult
-          if-no-files-found: ignore
           retention-days: 7
+          if-no-files-found: ignore
 
-      - name: Upload build log on failure
+      - name: Upload build logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -87,31 +93,27 @@ jobs:
           path: |
             ios/build.log
             ios/test.log
-          if-no-files-found: ignore
           retention-days: 7
+          if-no-files-found: ignore
 
-  # 打包未签名 .ipa，供 AltStore / SideStore 侧载。
-  # 免费 Apple ID 也能用：AltStore 在本机重签，不需要付费开发者账号。
   package-unsigned-ipa:
-    name: Unsigned IPA
-    runs-on: macos-14
+    name: Package unsigned IPA
     needs: build-and-test
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: macos-14
     timeout-minutes: 30
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: |
-          brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen
+        run: brew install xcodegen || brew upgrade xcodegen
 
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
 
-      - name: Archive for simulator-agnostic device build
+      - name: Archive
         working-directory: ios
         run: |
           set -o pipefail
@@ -125,18 +127,22 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Package Payload into .ipa
+      - name: Package IPA
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/ClashMgr.xcarchive/Products/Applications/ClashMgr.app"
-          test -d "$APP" || { echo "app not found at $APP"; ls -R "$RUNNER_TEMP/ClashMgr.xcarchive/Products"; exit 1; }
+          if [ ! -d "$APP" ]; then
+            echo "::error::找不到 ClashMgr.app"
+            ls -R "$RUNNER_TEMP/ClashMgr.xcarchive/Products" || true
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
           zip -qry ClashMgr-unsigned.ipa Payload
           ls -lh ClashMgr-unsigned.ipa
 
-      - name: Upload unsigned IPA
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ClashMgr-unsigned-ipa
