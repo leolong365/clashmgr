@@ -154,7 +154,7 @@ PYTHONIOENCODING=utf-8 python verify_yaml.py   # 26 用例 + 39 顶层键深比�
 
 `.github/workflows/ios.yml` 两个 job：
 
-1. **build-and-test**（`macos-14`）
+1. **build-and-test**（`macos-15`）
    `brew install xcodegen` → `xcodegen generate` → `xcodebuild build` + `xcodebuild test`
    （模拟器用 `xcrun simctl list devices available` 现场挑第一个可用的 iPhone，取其 UDID 传
    `-destination "id=$SIM_UDID"`，避免 runner 镜像升级后 `name=iPhone 15` 找不到设备；
