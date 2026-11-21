@@ -197,6 +197,21 @@ header:
 - 教训：**改 YAML / shell 续行时，用 Python 读磁盘原文再 `assert old in s` 匹配**，
   避免手打反斜杠数量出错；批量重写更安全的是整文件 `write`。
 
+### 27. OAuth App token 推 `.github/workflows/` 必须带 `workflow` scope
+- 现象：`git push` 报 `refusing to allow an OAuth App to create or update workflow
+  \`.github/workflows/ios.yml\` without \`workflow\` scope`。
+- 根因：设备码授权只申请了 `repo`；仓库里含 workflow 文件时，GitHub 要求
+  OAuth App 还得有 `workflow` scope 才允许更新该路径。
+- 解决：`--scope "repo workflow"` 重新走一遍设备码授权。
+
+### 28. GitHub 设备码授权（RFC 8628）比建 PAT 顺滑
+- 流程：`POST github.com/login/device/code`（client_id + scope）→ 用户开
+  `github.com/login/device` 输 8 位码点 Authorize → 轮询
+  `login/oauth/access_token`（`authorization_pending` 继续等、`slow_down` +5s）。
+- 实现：`tools/gh_login.py`；复用 GitHub CLI 的公开 client_id（授权页显示 GitHub CLI）。
+- 用户侧痛点消除：无需进设置页找 token 入口（`settings/token` 单数会 404，
+  正确是 `settings/tokens` 复数）。
+
 ---
 
 ## 五、待办 / 未验证

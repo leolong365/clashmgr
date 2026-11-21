@@ -1,31 +1,30 @@
 # 推送到 GitHub 并跑 CI
 
-本机已建好本地 git 仓库（3 个 commit），工作区干净。**唯一缺口是没有 GitHub 凭据**，
-所以无法推送、Actions 也就跑不起来。下面三种方式任选一种。
+本机已建好本地 git 仓库，工作区干净。**唯一缺口是没有 GitHub 凭据**。
+下面三种方式任选一种，方式 A 最省事。
 
 ---
 
-## 方式 A：把 PAT 交给 Agent 全自动完成（最省事）
+## 方式 A：设备码授权，Agent 全自动完成（推荐）
 
-在 https://github.com/settings/tokens 建一个 **classic PAT**，勾选：
+不需要建 PAT、不需要进设置页。执行：
 
-- `repo`（完整仓库权限，创建仓库 + 推送都要）
-
-然后把这两条信息发给 Agent：
-
-```
-仓库名：clashmgr          （或者你想用的名字）
-PAT：ghp_xxxxxxxxxxxxxxxx
+```bash
+cd /e/clash/clashmgr
+export HTTPS_PROXY=http://127.0.0.1:7897
+PYTHONIOENCODING=utf-8 python tools/gh_login.py --repo clashmgr
 ```
 
-Agent 会通过 GitHub REST API（走本机代理 `127.0.0.1:7897`）：
-1. 创建仓库（私有，可改公开）
-2. `git push` 到 `main`
-3. 轮询 Actions 运行状态
-4. 下载失败日志、直接改代码、再推，直到 `Build & Test` 通过
-5. 把编译好的**未签名 ipa** 作为 artifact 交给你
+脚本会打出：
+1. 打开 `https://github.com/login/device`
+2. 输入 8 位码（形如 `XXXX-XXXX`）
+3. 点绿色 **Authorize**（页面上显示 GitHub CLI，因为复用了它的公开 OAuth App ID；只申请 `repo` + `workflow`）
 
-> PAT 用完即弃，事后到 GitHub 撤销即可。
+授权后全自动：建仓 `leolong365/clashmgr` → push main → 轮询 Actions →
+失败时打印失败 job 与 step。token 只在内存里用一次，不写盘。
+
+> 也可以直接给 Agent 一个 PAT（https://github.com/settings/tokens/new ，classic，勾 repo+workflow），
+> 然后 `GITHUB_TOKEN=ghp_xxx python tools/push_github.py --repo clashmgr`。
 
 ---
 
