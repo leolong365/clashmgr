@@ -23,3 +23,4 @@ __pycache__/
 
 # 本机临时文件
 tools/tmp/
+dist/
