@@ -1,0 +1,144 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'fixtures/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Show available simulators
+        run: xcrun simctl list devices available | head -40
+
+      - name: Build
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ClashMgr.xcodeproj \
+            -scheme ClashMgr \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            | tee build.log
+
+      - name: Test
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project ClashMgr.xcodeproj \
+            -scheme ClashMgr \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -resultBundlePath TestResults.xcresult \
+            | tee test.log
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ios/TestResults.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ios/build.log
+            ios/test.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 打包未签名 .ipa，供 AltStore / SideStore 侧载。
+  # 免费 Apple ID 也能用：AltStore 在本机重签，不需要付费开发者账号。
+  package-unsigned-ipa:
+    name: Unsigned IPA
+    runs-on: macos-14
+    needs: build-and-test
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Archive for simulator-agnostic device build
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project ClashMgr.xcodeproj \
+            -scheme ClashMgr \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ClashMgr.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package Payload into .ipa
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/ClashMgr.xcarchive/Products/Applications/ClashMgr.app"
+          test -d "$APP" || { echo "app not found at $APP"; ls -R "$RUNNER_TEMP/ClashMgr.xcarchive/Products"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -qry ClashMgr-unsigned.ipa Payload
+          ls -lh ClashMgr-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClashMgr-unsigned-ipa
+          path: ${{ runner.temp }}/ClashMgr-unsigned.ipa
+          retention-days: 30
